@@ -1,0 +1,9 @@
+{
+	"name": "krishh-adf-kiran",
+	"location": "eastus",
+	"identity": {
+		"type": "SystemAssigned",
+		"principalId": "5901d6cf-83ba-4a40-ae1d-b4c56e89b088",
+		"tenantId": "d885b724-e8f0-430c-a71c-10565ea5a424"
+	}
+}
