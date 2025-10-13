@@ -3,7 +3,7 @@
 	"properties": {
 		"activities": [
 			{
-				"name": "get cdc",
+				"name": "get all metadata",
 				"type": "Lookup",
 				"dependsOn": [],
 				"policy": {
@@ -32,62 +32,18 @@
 						"parameters": {
 							"container": "bronze",
 							"directory": "cdc",
-							"file": "cdc.json"
+							"file": "meta_cdc.json"
 						}
-					}
-				}
-			},
-			{
-				"name": "look number of changed records",
-				"type": "Lookup",
-				"dependsOn": [
-					{
-						"activity": "get cdc",
-						"dependencyConditions": [
-							"Succeeded"
-						]
-					}
-				],
-				"policy": {
-					"timeout": "0.12:00:00",
-					"retry": 0,
-					"retryIntervalInSeconds": 30,
-					"secureOutput": false,
-					"secureInput": false
-				},
-				"userProperties": [],
-				"typeProperties": {
-					"source": {
-						"type": "AzureSqlSource",
-						"sqlReaderQuery": {
-							"value": "select count(*) as no_of_records from @{pipeline().parameters.schema}.@{pipeline().parameters.table} where @{pipeline().parameters.cdc_column} > '@{if(empty(pipeline().parameters.back_date),activity('get cdc').output.firstRow.cdc,pipeline().parameters.back_date)}'\n\n",
-							"type": "Expression"
-						},
-						"queryTimeout": "02:00:00",
-						"partitionOption": "None"
 					},
-					"dataset": {
-						"referenceName": "DS_sql_kiran",
-						"type": "DatasetReference",
-						"parameters": {
-							"schema": {
-								"value": "@pipeline().parameters.schema",
-								"type": "Expression"
-							},
-							"table": {
-								"value": "@pipeline().parameters.table",
-								"type": "Expression"
-							}
-						}
-					}
+					"firstRowOnly": false
 				}
 			},
 			{
-				"name": "if changed records available to load",
-				"type": "IfCondition",
+				"name": "ForEach table",
+				"type": "ForEach",
 				"dependsOn": [
 					{
-						"activity": "look number of changed records",
+						"activity": "get all metadata",
 						"dependencyConditions": [
 							"Succeeded"
 						]
@@ -95,26 +51,61 @@
 				],
 				"userProperties": [],
 				"typeProperties": {
-					"expression": {
-						"value": "@greater(activity('look number of changed records').output.firstRow.no_of_records,0)",
+					"items": {
+						"value": "@activity('get all metadata').output.value",
 						"type": "Expression"
 					},
-					"ifFalseActivities": [
+					"activities": [
 						{
-							"name": "do not have changed records to load",
-							"type": "Wait",
+							"name": "get cdc",
+							"type": "Lookup",
 							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
 							"userProperties": [],
 							"typeProperties": {
-								"waitTimeInSeconds": 5
+								"source": {
+									"type": "JsonSource",
+									"storeSettings": {
+										"type": "AzureBlobFSReadSettings",
+										"recursive": true,
+										"enablePartitionDiscovery": false
+									},
+									"formatSettings": {
+										"type": "JsonReadSettings"
+									}
+								},
+								"dataset": {
+									"referenceName": "DS_datalake_json_param",
+									"type": "DatasetReference",
+									"parameters": {
+										"container": "bronze",
+										"directory": "cdc",
+										"file": {
+											"value": "@{item().table}_cdc.json",
+											"type": "Expression"
+										}
+									}
+								},
+								"firstRowOnly": true
 							}
-						}
-					],
-					"ifTrueActivities": [
+						},
 						{
-							"name": "Copy each table to bronze",
-							"type": "Copy",
-							"dependsOn": [],
+							"name": "look number of changed records",
+							"type": "Lookup",
+							"dependsOn": [
+								{
+									"activity": "get cdc",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
 							"policy": {
 								"timeout": "0.12:00:00",
 								"retry": 0,
@@ -127,196 +118,252 @@
 								"source": {
 									"type": "AzureSqlSource",
 									"sqlReaderQuery": {
-										"value": "select * from @{pipeline().parameters.schema}.@{pipeline().parameters.table} where @{pipeline().parameters.cdc_column} > '@{if(empty(pipeline().parameters.back_date),activity('get cdc').output.firstRow.cdc,pipeline().parameters.back_date)}'\n",
+										"value": "select count(*) as no_of_records from @{item().schema}.@{item().table} where @{item().cdc_column} > '@{if(empty(item().back_date),activity('get cdc').output.firstRow.cdc,item().back_date)}'\n\n",
 										"type": "Expression"
 									},
 									"queryTimeout": "02:00:00",
 									"partitionOption": "None"
 								},
-								"sink": {
-									"type": "ParquetSink",
-									"storeSettings": {
-										"type": "AzureBlobFSWriteSettings"
-									},
-									"formatSettings": {
-										"type": "ParquetWriteSettings"
-									}
-								},
-								"enableStaging": false,
-								"translator": {
-									"type": "TabularTranslator",
-									"typeConversion": true,
-									"typeConversionSettings": {
-										"allowDataTruncation": true,
-										"treatBooleanAsNumber": false
-									}
-								}
-							},
-							"inputs": [
-								{
+								"dataset": {
 									"referenceName": "DS_sql_kiran",
 									"type": "DatasetReference",
 									"parameters": {
 										"schema": {
-											"value": "@pipeline().parameters.schema",
+											"value": "@item().schema",
 											"type": "Expression"
 										},
 										"table": {
-											"value": "@pipeline().parameters.table",
+											"value": "@item().table",
 											"type": "Expression"
 										}
 									}
 								}
-							],
-							"outputs": [
-								{
-									"referenceName": "DS_datalake_parquet_param",
-									"type": "DatasetReference",
-									"parameters": {
-										"container": "bronze",
-										"directory": {
-											"value": "@pipeline().parameters.table",
-											"type": "Expression"
-										},
-										"file": {
-											"value": "@concat(pipeline().parameters.table,'.','parquet')",
-											"type": "Expression"
-										}
-									}
-								}
-							]
+							}
 						},
 						{
-							"name": "update cdc",
-							"type": "Copy",
+							"name": "if changed records available to load",
+							"type": "IfCondition",
 							"dependsOn": [
 								{
-									"activity": "get new_watermark",
+									"activity": "look number of changed records",
 									"dependencyConditions": [
 										"Succeeded"
 									]
 								}
 							],
-							"policy": {
-								"timeout": "0.12:00:00",
-								"retry": 0,
-								"retryIntervalInSeconds": 30,
-								"secureOutput": false,
-								"secureInput": false
-							},
 							"userProperties": [],
 							"typeProperties": {
-								"source": {
-									"type": "JsonSource",
-									"additionalColumns": [
-										{
-											"name": "cdc",
-											"value": {
-												"value": "@activity('get new_watermark').output.resultSets[0].rows[0].new_cdc",
-												"type": "Expression"
-											}
-										}
-									],
-									"storeSettings": {
-										"type": "AzureBlobFSReadSettings",
-										"recursive": true,
-										"enablePartitionDiscovery": false
-									},
-									"formatSettings": {
-										"type": "JsonReadSettings"
-									}
+								"expression": {
+									"value": "@greater(activity('look number of changed records').output.firstRow.no_of_records,0)",
+									"type": "Expression"
 								},
-								"sink": {
-									"type": "JsonSink",
-									"storeSettings": {
-										"type": "AzureBlobFSWriteSettings"
-									},
-									"formatSettings": {
-										"type": "JsonWriteSettings"
-									}
-								},
-								"enableStaging": false
-							},
-							"inputs": [
-								{
-									"referenceName": "DS_datalake_json_param",
-									"type": "DatasetReference",
-									"parameters": {
-										"container": "bronze",
-										"directory": "cdc",
-										"file": "empty.json"
-									}
-								}
-							],
-							"outputs": [
-								{
-									"referenceName": "DS_datalake_json_param",
-									"type": "DatasetReference",
-									"parameters": {
-										"container": "bronze",
-										"directory": "cdc",
-										"file": "cdc.json"
-									}
-								}
-							]
-						},
-						{
-							"name": "get new_watermark",
-							"type": "Script",
-							"dependsOn": [
-								{
-									"activity": "Copy each table to bronze",
-									"dependencyConditions": [
-										"Succeeded"
-									]
-								}
-							],
-							"policy": {
-								"timeout": "0.12:00:00",
-								"retry": 0,
-								"retryIntervalInSeconds": 30,
-								"secureOutput": false,
-								"secureInput": false
-							},
-							"userProperties": [],
-							"linkedServiceName": {
-								"referenceName": "LS_sql_azure_kiran",
-								"type": "LinkedServiceReference"
-							},
-							"typeProperties": {
-								"scripts": [
+								"ifFalseActivities": [
 									{
-										"type": "Query",
-										"text": {
-											"value": "select max(@{pipeline().parameters.cdc_column}) as new_cdc from @{pipeline().parameters.schema}.@{pipeline().parameters.table}",
-											"type": "Expression"
+										"name": "do not have changed records to load",
+										"type": "Wait",
+										"dependsOn": [],
+										"userProperties": [],
+										"typeProperties": {
+											"waitTimeInSeconds": 5
 										}
 									}
 								],
-								"scriptBlockExecutionTimeout": "02:00:00"
+								"ifTrueActivities": [
+									{
+										"name": "Copy each table to bronze",
+										"type": "Copy",
+										"dependsOn": [],
+										"policy": {
+											"timeout": "0.12:00:00",
+											"retry": 0,
+											"retryIntervalInSeconds": 30,
+											"secureOutput": false,
+											"secureInput": false
+										},
+										"userProperties": [],
+										"typeProperties": {
+											"source": {
+												"type": "AzureSqlSource",
+												"sqlReaderQuery": {
+													"value": "select * from @{item().schema}.@{item().table} where @{item().cdc_column} > '@{if(empty(item().back_date),activity('get cdc').output.firstRow.cdc,item().back_date)}'\n",
+													"type": "Expression"
+												},
+												"queryTimeout": "02:00:00",
+												"partitionOption": "None"
+											},
+											"sink": {
+												"type": "ParquetSink",
+												"storeSettings": {
+													"type": "AzureBlobFSWriteSettings"
+												},
+												"formatSettings": {
+													"type": "ParquetWriteSettings"
+												}
+											},
+											"enableStaging": false,
+											"translator": {
+												"type": "TabularTranslator",
+												"typeConversion": true,
+												"typeConversionSettings": {
+													"allowDataTruncation": true,
+													"treatBooleanAsNumber": false
+												}
+											}
+										},
+										"inputs": [
+											{
+												"referenceName": "DS_sql_kiran",
+												"type": "DatasetReference",
+												"parameters": {
+													"schema": {
+														"value": "@item().schema",
+														"type": "Expression"
+													},
+													"table": {
+														"value": "@item().table",
+														"type": "Expression"
+													}
+												}
+											}
+										],
+										"outputs": [
+											{
+												"referenceName": "DS_datalake_parquet_param",
+												"type": "DatasetReference",
+												"parameters": {
+													"container": "bronze",
+													"directory": {
+														"value": "@item().table",
+														"type": "Expression"
+													},
+													"file": {
+														"value": "@concat(item().table,'.','parquet')",
+														"type": "Expression"
+													}
+												}
+											}
+										]
+									},
+									{
+										"name": "update cdc",
+										"type": "Copy",
+										"dependsOn": [
+											{
+												"activity": "get new_watermark",
+												"dependencyConditions": [
+													"Succeeded"
+												]
+											}
+										],
+										"policy": {
+											"timeout": "0.12:00:00",
+											"retry": 0,
+											"retryIntervalInSeconds": 30,
+											"secureOutput": false,
+											"secureInput": false
+										},
+										"userProperties": [],
+										"typeProperties": {
+											"source": {
+												"type": "JsonSource",
+												"additionalColumns": [
+													{
+														"name": "cdc",
+														"value": {
+															"value": "@activity('get new_watermark').output.resultSets[0].rows[0].new_cdc",
+															"type": "Expression"
+														}
+													}
+												],
+												"storeSettings": {
+													"type": "AzureBlobFSReadSettings",
+													"recursive": true,
+													"enablePartitionDiscovery": false
+												},
+												"formatSettings": {
+													"type": "JsonReadSettings"
+												}
+											},
+											"sink": {
+												"type": "JsonSink",
+												"storeSettings": {
+													"type": "AzureBlobFSWriteSettings"
+												},
+												"formatSettings": {
+													"type": "JsonWriteSettings"
+												}
+											},
+											"enableStaging": false
+										},
+										"inputs": [
+											{
+												"referenceName": "DS_datalake_json_param",
+												"type": "DatasetReference",
+												"parameters": {
+													"container": "bronze",
+													"directory": "cdc",
+													"file": "empty.json"
+												}
+											}
+										],
+										"outputs": [
+											{
+												"referenceName": "DS_datalake_json_param",
+												"type": "DatasetReference",
+												"parameters": {
+													"container": "bronze",
+													"directory": "cdc",
+													"file": {
+														"value": "@{item().table}_cdc.json",
+														"type": "Expression"
+													}
+												}
+											}
+										]
+									},
+									{
+										"name": "get new_watermark",
+										"type": "Script",
+										"dependsOn": [
+											{
+												"activity": "Copy each table to bronze",
+												"dependencyConditions": [
+													"Succeeded"
+												]
+											}
+										],
+										"policy": {
+											"timeout": "0.12:00:00",
+											"retry": 0,
+											"retryIntervalInSeconds": 30,
+											"secureOutput": false,
+											"secureInput": false
+										},
+										"userProperties": [],
+										"linkedServiceName": {
+											"referenceName": "LS_sql_azure_kiran",
+											"type": "LinkedServiceReference"
+										},
+										"typeProperties": {
+											"scripts": [
+												{
+													"type": "Query",
+													"text": {
+														"value": "select max(@{item().cdc_column}) as new_cdc from @{item().schema}.@{item().table}",
+														"type": "Expression"
+													}
+												}
+											],
+											"scriptBlockExecutionTimeout": "02:00:00"
+										}
+									}
+								]
 							}
 						}
 					]
 				}
 			}
 		],
-		"parameters": {
-			"schema": {
-				"type": "string",
-				"defaultValue": "dbo"
-			},
-			"table": {
-				"type": "string",
-				"defaultValue": "DimUser"
-			},
-			"cdc_column": {
-				"type": "string",
-				"defaultValue": "updated_at"
-			},
-			"back_date": {
-				"type": "string"
-			}
-		},
 		"annotations": []
 	}
 }
