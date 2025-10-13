@@ -60,7 +60,7 @@
 					"source": {
 						"type": "AzureSqlSource",
 						"sqlReaderQuery": {
-							"value": "select count(*) as no_of_records from @{pipeline().parameters.schema}.@{pipeline().parameters.table} where @{pipeline().parameters.cdc_column} > '@{activity('get cdc').output.firstRow.cdc}'",
+							"value": "select count(*) as no_of_records from @{pipeline().parameters.schema}.@{pipeline().parameters.table} where @{pipeline().parameters.cdc_column} > '@{if(empty(pipeline().parameters.back_date),activity('get cdc').output.firstRow.cdc,pipeline().parameters.back_date)}'\n",
 							"type": "Expression"
 						},
 						"queryTimeout": "02:00:00",
@@ -127,7 +127,7 @@
 								"source": {
 									"type": "AzureSqlSource",
 									"sqlReaderQuery": {
-										"value": "select * from @{pipeline().parameters.schema}.@{pipeline().parameters.table} where @{pipeline().parameters.cdc_column} > '@{activity('get cdc').output.firstRow.cdc}'",
+										"value": "select * from @{pipeline().parameters.schema}.@{pipeline().parameters.table} where @{pipeline().parameters.cdc_column} > '@{if(empty(pipeline().parameters.back_date),activity('get cdc').output.firstRow.cdc,pipeline().parameters.back_date)}'\n",
 										"type": "Expression"
 									},
 									"queryTimeout": "02:00:00",
@@ -312,6 +312,9 @@
 			"cdc_column": {
 				"type": "string",
 				"defaultValue": "updated_at"
+			},
+			"back_date": {
+				"type": "string"
 			}
 		},
 		"annotations": []
