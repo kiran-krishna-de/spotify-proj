@@ -1,0 +1,37 @@
+[
+  {
+   "schema":"dbo",
+   "table":"DimUser",
+   "cdc_column":"updated_at",
+   "back_date":""
+  },
+  
+  {
+   "schema":"dbo",
+   "table":"DimArtist",
+   "cdc_column":"updated_at",
+   "back_date":""
+  },
+
+  {
+   "schema":"dbo",
+   "table":"DimDate",
+   "cdc_column":"date",
+   "back_date":""
+  },
+
+  {
+   "schema":"dbo",
+   "table":"DimTrack",
+   "cdc_column":"updated_at",
+   "back_date":""
+  },
+
+  {
+   "schema":"dbo",
+   "table":"FactStream",
+   "cdc_column":"stream_timestamp",
+   "back_date":""
+  }
+
+]
